@@ -1,0 +1,32 @@
+version: '2'
+
+services:
+  initiator:
+    build: .
+    image: gabrielkulp/bls:latest
+    command: [ "/usr/local/bin/bls.py", "10", "7" ]
+    #"${SERVER_COUNT:-10}" "${THRESHOLD:-7}"
+    depends_on:
+      - responder
+    networks:
+      bls-net:
+        ipv4_address: 10.0.0.254
+
+  responder:
+    build: .
+    image: gabrielkulp/bls:latest
+    command: [ "/usr/local/bin/bls.py" ]
+    deploy:
+      replicas: 10
+      # replicas: "${SERVER_COUNT:-10}"
+    networks:
+      bls-net:
+
+networks:
+  bls-net:
+    driver: bridge
+    ipam:
+     config:
+       - subnet: 10.0.0.0/16
+         gateway: 10.0.0.1
+
