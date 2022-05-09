@@ -20,9 +20,11 @@ from charm.toolbox.IBSig import IBSig
 import sys
 import socket
 import asyncio
+import time
 
-PORT = 5005
-REQUESTER_ADDR = ("10.0.0.254", PORT)
+PORT_SIGN = 5005  # port for signature requests
+PORT_SHARE = 5006  # port for sending shares
+REQUESTER_ADDR = ("10.0.0.254", PORT_SIGN)
 
 debug = False
 
@@ -101,9 +103,18 @@ class BLSTHS(IBSig):
 
 
 class ResponderServer:
-    def __init__(self, bls, share):
+    def __init__(self, go, bls):
+        self.go = go
         self.bls = bls
-        self.share = share
+
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.bind(("0.0.0.0", PORT_SHARE))
+        print("sending share request")
+        sock.sendto(b'\xff', REQUESTER_ADDR)
+        (data, _) = sock.recvfrom(1024)
+        self.share = go.deserialize(data)
+        sock.close()
+        print("got my share")
 
     def connection_made(self, transport):
         self.transport = transport
@@ -112,22 +123,27 @@ class ResponderServer:
         idx = data[0]
         m = data[1:]
         psign = self.bls.sign(self.share, m)
-        res = idx.to_bytes(1, "big") + psign
-        self.transport.sendto(psign, res)
+        res = idx.to_bytes(1, "big") + self.go.serialize(psign)
+        time.sleep(1)
+        self.transport.sendto(res, addr)
+        print("sent signature")
 
 
 class InitiatorServer:
-    def __init__(self, bls, sock, n, t, pk, ms):
+    def __init__(self, go, bls, all_shares, n, t, pk, ms):
+        self.go = go
         self.bls = bls
-        self.sock = sock
+        self.all_shares = all_shares
         self.n = n
         self.t = t
         self.pk = pk
         self.ms = ms
 
-        self.idx = -1
+        self.seq = -1
         self.m = None
         self.signs = []
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        # self.sock.bind(("0.0.0.0", PORT_SHARE))
         self.initiate_new()  # kickstart the whole process
 
     def connection_made(self, transport):
@@ -135,14 +151,32 @@ class InitiatorServer:
 
     def datagram_received(self, data, addr):
         (ip, _) = addr
+
         res_idx = int(ip.split('.')[-1]) - 2
-        req_idx = data[0]
-        share = data[1:]
 
-        if req_idx == self.idx:
+        if data == b'\xff':
+            # this is actually a request for a share
+            print("got share request")
+            res = self.go.serialize(self.all_shares[res_idx])
+            self.transport.sendto(res, (ip, PORT_SHARE))
+            print("sent share")
+            return
+
+        if data == b'\xfe':
+            # this is actually a request to start over
+            self.initiate_new()
+            return
+
+        seq = data[0]
+        share = self.go.deserialize(data[1:])
+
+        if seq == self.seq:
+            print("got signature from", res_idx)
             self.signs.append((res_idx+1, share))
+        else:
+            print("sequence number mismatch. Expected", self.seq, "got", seq)
 
-        if len(self.signs) == self.threshold:
+        if len(self.signs) >= self.t:
             self.aggregate_and_verify()
             self.initiate_new()
 
@@ -153,15 +187,19 @@ class InitiatorServer:
         assert self.bls.verify(self.pk, sig, self.m), "Failure!!!"
 
     def initiate_new(self):
-        self.idx += 1
-        self.idx %= 256
-        self.idx %= len(self.ms)
-        self.m = self.ms[self.idx]
+        if len(self.signs) < self.t:
+            print("aborted", self.seq)
+        self.seq += 1
+        self.seq %= 0xff-2
+        self.seq %= len(self.ms)
+        self.m = self.ms[self.seq]
 
         # send requests to all responders
+        self.signs = []
+        time.sleep(1)
         for i in range(self.n):
-            msg = self.idx.to_bytes(1, "big") + self.m
-            self.sock.sendto(msg, (f"10.0.0.{i+2}", PORT))
+            msg = self.seq.to_bytes(1, "big") + self.m
+            self.sock.sendto(msg, (f"10.0.0.{i+2}", PORT_SIGN))
 
 
 def main():
@@ -169,21 +207,18 @@ def main():
     groupObj = PairingGroup('MNT224')
     bls = BLSTHS(groupObj)
 
-    messages = ["hello world!!!", "test message", "third one"]
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.bind(("0.0.0.0", PORT))
+    messages = [b"hello world!!!", b"test message", b"third one"]
+    print("socket bound")
 
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
+    server = None
 
     if len(sys.argv) == 1:  # responder
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        (share_raw, _) = sock.recvfrom(1024)  # get share from initiator
-        share = PairingGroup.deserialize(share_raw)
-        sock.sendto(b'1', REQUESTER_ADDR)  # reply with ack
-        loop.create_datagram_endpoint(
-            lambda: ResponderServer(bls, sock, share),
-            local_addr=('0.0.0.0', PORT))
+        server = loop.create_datagram_endpoint(
+            lambda: ResponderServer(groupObj, bls),
+            local_addr=('0.0.0.0', PORT_SIGN))
+        time.sleep(2)
 
     else:  # initiator
         if len(sys.argv) != 3:
@@ -193,29 +228,14 @@ def main():
         t = int(sys.argv[2])
 
         (pk, shares) = bls.keygen(n, t)
-        loop.create_datagram_endpoint(
-            lambda: InitiatorServer(bls, sock, n, t, pk, messages),
-            local_addr=('0.0.0.0', PORT))
+        server = loop.create_datagram_endpoint(
+            lambda: InitiatorServer(groupObj, bls, shares, n, t, pk, messages),
+            local_addr=('0.0.0.0', PORT_SIGN))
 
-        # send shares to all responders
-        responders = []
-        for i in range(n):
-            ip = f"10.0.0.{i+2}"
-            responders.append(ip)
-            share_raw = PairingGroup.serialize(shares[i])
-            sock.sendto(share_raw, (ip, PORT))
+    # srv = loop.create_datagram_endpoint(server, local_addr=('0.0.0.0', 5000))
+    loop.run_until_complete(server)
 
-        # wait for ack
-        for i in range(n):
-            (_, (ip, _)) = sock.recvfrom(1024)
-            responders.remove(ip)
-
-        if len(responders) != 0:
-            print("Handshake failed", responders)
-            exit(1)
-
-    loop.create_datagram_endpoint(server, local_addr=('0.0.0.0', 5000))
-
+    print("starting loop")
     try:
         loop.run_forever()
     except KeyboardInterrupt:
