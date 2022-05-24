@@ -36,9 +36,9 @@ class ResponderServer:
         m = data[1:]
         psign = self.bls.sign(self.share, m)
         res = idx.to_bytes(1, "big") + self.go.serialize(psign)
-        time.sleep(2)
+        #time.sleep(.1)
         self.transport.sendto(res, INITIALIZER_ADDR)
-        print("sent signature")
+        print("sent signature for", idx)
 
 
 class InitiatorServer:
@@ -50,6 +50,9 @@ class InitiatorServer:
         self.t = t
         self.pk = pk
         self.ms = ms
+        if len(ms) > 0xff:
+            print("Too many messages! Sequence number will be too long.")
+            exit(1)
 
         self.seq = -1
         self.m = None
@@ -63,31 +66,33 @@ class InitiatorServer:
 
     def datagram_received(self, data, addr):
         (ip, _) = addr
-
         res_idx = int(ip.split('.')[-1]) - 2
 
         if data == b'\xff':
-            # this is actually a request for a share
+            # this is a request for a share
             print("got share request")
             res = self.go.serialize(self.all_shares[res_idx])
             self.transport.sendto(res, (ip, PORT_SIG))
             print("sent share:", self.all_shares[res_idx])
+            self.initiate_new()
             return
 
         if data == b'\xfe':
-            # this is actually a request to start over
+            # this is a request to start over
             print("initiating new")
             self.initiate_new()
             return
 
+        # otherwise this is a signature share!
         seq = data[0]
         share = self.go.deserialize(data[1:])
 
         if seq == self.seq:
-            print("got signature from", res_idx)
+            print(f"got signature {seq} from {res_idx}")
             self.signs.append((res_idx+1, share))
         else:
-            print("sequence number mismatch. Expected", self.seq, "got", seq)
+            #print(f"sequence number mismatch. Expected {self.seq} got {seq} from {res_idx}")
+            print("discarding extra share")
 
         if len(self.signs) >= self.t:
             self.aggregate_and_verify()
@@ -95,25 +100,25 @@ class InitiatorServer:
 
     def aggregate_and_verify(self):
         sig = self.bls.aggregate(self.signs)
-        print("Message: '%s'" % self.m)
-        print("Signature: '%s'" % sig)
-        if self.bls.verify(self.pk, sig, self.m):
-            print("Valid signature!")
-        else:
-            print("INVALID")
+        print(f"Message: '{self.m}'")
+        print(f"Signature: {sig}")
+        #if self.bls.verify(self.pk, sig, self.m):
+        #    print("Valid signature!")
+        #else:
+        #    print("INVALID")
 
     def initiate_new(self):
-        if len(self.signs) < self.t:
+        if len(self.signs) < self.t and self.seq != -1:
             print("aborted", self.seq)
         self.seq += 1
-        self.seq %= 0xff-2
         self.seq %= len(self.ms)
         self.m = self.ms[self.seq]
 
         # send requests to all responders
         self.signs = []
-        time.sleep(1)
+        #time.sleep(.1)
         msg = self.seq.to_bytes(1, "big") + self.m
+        print("sending request for", self.seq)
         self.sock.sendto(msg, (MCAST_SIGN, PORT_SIGN))
 
 
