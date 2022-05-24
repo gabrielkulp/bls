@@ -70,8 +70,9 @@ RUN apt-get install -y --no-install-recommends \
     tmux \
     vim
 
-WORKDIR /usr/local/
-COPY bls.py /usr/local/bin/bls.py
+WORKDIR /opt
+COPY bls.py bls.py
+COPY server.py server.py
 
 # RUN pip install debugpy
 # ENTRYPOINT [ "python", "-m", "debugpy", "--listen", "0.0.0.0:5678", "--wait-for-client", "-m"]

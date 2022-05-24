@@ -4,7 +4,7 @@ services:
   initiator:
     build: .
     image: gabrielkulp/bls:latest
-    command: [ "/usr/local/bin/bls.py", "10", "7" ]
+    command: [ "./server.py", "10", "7" ]
     #"${SERVER_COUNT:-10}" "${THRESHOLD:-7}"
     depends_on:
       - responder
@@ -15,7 +15,7 @@ services:
   responder:
     build: .
     image: gabrielkulp/bls:latest
-    command: [ "/usr/local/bin/bls.py" ]
+    command: [ "./server.py" ]
     deploy:
       replicas: 10
       # replicas: "${SERVER_COUNT:-10}"
