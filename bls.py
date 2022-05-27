@@ -82,25 +82,52 @@ class BLSTHS(IBSig):
         return sign
 
 
+import sys
+import time
 if __name__ == "__main__":
+    delay = 10
+    oneshot = True
+    if len(sys.argv) == 2:
+        delay = float(sys.argv[1])
+        oneshot = False
+
     groupObj = PairingGroup('MNT224')
     
-    m = { 'a':"hello world!!!" , 'b':"test message" }
+    messages = [b"hello world!!!", b"test message", b"third one"]
+
     bls = BLSTHS(groupObj)
     
-    n, t = 24, 18
+    n, t = 10, 7
     (pk, shares) = bls.keygen(n, t)
-    
-    signs = []
-    for i in range(t+1):
-        psign = bls.sign(shares[i], m)
-        signs.append((i+1, psign))
 
-    sig = bls.aggregate(signs)
+    sig_count = 0
+    time_end = 0
+    time_start = time.time()
+    cont = True
+    while cont:
+        signs = []
+        for m in messages:
+            for i in range(t+1):
+                psign = bls.sign(shares[i], m)
+                signs.append((i+1, psign))
+
+            sig = bls.aggregate(signs)
+            
+            if oneshot:
+                print("Message: '%s'" % m)
+                print("Signature: '%s'" % sig)     
+            if bls.verify(pk, sig, m):
+                sig_count += 1
+                if oneshot:
+                    print("success!")
+                    exit(0)
+            elif oneshot:
+                print("failure!")
+                exit(1)
+            time_end = time.time()
+            if time_end-time_start > delay:
+                cont = False
+                break
     
-    print("Message: '%s'" % m)
-    print("Signature: '%s'" % sig)     
-    if bls.verify(pk, sig, m):
-        print('SUCCESS!!!')
-    else:
-        print("Failure!!!")
+    print(f"Completed {sig_count} in {round(time_end-time_start, 2)} seconds")
+    print(f"Average is {round(sig_count/(time_end-time_start), 2)} signatures per second")            
