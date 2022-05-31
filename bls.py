@@ -16,6 +16,9 @@ from charm.toolbox.pairinggroup import PairingGroup, ZR, G1, G2, pair
 from charm.core.engine.util import objectToBytes
 from charm.toolbox.IBSig import IBSig
 
+import sys
+import time
+
 debug = False
 
 
@@ -82,8 +85,6 @@ class BLSTHS(IBSig):
         return sign
 
 
-import sys
-import time
 if __name__ == "__main__":
     delay = 10
     oneshot = True
@@ -92,11 +93,11 @@ if __name__ == "__main__":
         oneshot = False
 
     groupObj = PairingGroup('MNT224')
-    
+
     messages = [b"hello world!!!", b"test message", b"third one"]
 
     bls = BLSTHS(groupObj)
-    
+
     n, t = 10, 7
     (pk, shares) = bls.keygen(n, t)
 
@@ -112,10 +113,10 @@ if __name__ == "__main__":
                 signs.append((i+1, psign))
 
             sig = bls.aggregate(signs)
-            
+
             if oneshot:
                 print("Message: '%s'" % m)
-                print("Signature: '%s'" % sig)     
+                print("Signature: '%s'" % sig)
             if bls.verify(pk, sig, m):
                 sig_count += 1
                 if oneshot:
@@ -128,6 +129,8 @@ if __name__ == "__main__":
             if time_end-time_start > delay:
                 cont = False
                 break
-    
-    print(f"Completed {sig_count} in {round(time_end-time_start, 2)} seconds")
-    print(f"Average is {round(sig_count/(time_end-time_start), 2)} signatures per second")            
+
+    duration = time_end-time_start
+    rate = sig_count/duration
+    print(f"Completed {sig_count} in {duration:.2f} seconds")
+    print(f"Average is {rate:.2f} signatures per second")
