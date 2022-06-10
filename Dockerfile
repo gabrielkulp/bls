@@ -72,6 +72,7 @@ RUN apt-get install -y --no-install-recommends \
 
 WORKDIR /opt
 COPY bls.py bls.py
+COPY restart.py restart.py
 COPY server.py server.py
 
 # RUN pip install debugpy
