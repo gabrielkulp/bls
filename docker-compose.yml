@@ -13,8 +13,8 @@ services:
   responder:
     build: .
     image: gabrielkulp/bls:latest
-    command: "./server.py"
-    #command: "./restart.py 10 .7 10 3 30"
+    #command: "./server.py"
+    command: "./restart.py 10 .7 10 3 30"
     depends_on:
       - initiator
     deploy:

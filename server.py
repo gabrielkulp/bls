@@ -4,6 +4,7 @@ import socket
 import asyncio
 import time
 import os
+from threading import Timer
 
 from bls import BLSTHS, PairingGroup
 
@@ -15,6 +16,8 @@ SIG_SHARE_DEST = ("10.0.0.254", PORT_INITIALIZER)
 MCAST_CHANNEL = ("224.1.1.1", 5006)  # multicast for signing requests
 
 KEY_SHARE_PATH = "./share.key"
+
+WATCHDOG_TIMEOUT = .01  # seconds of silence until abort
 
 
 class ResponderServer:
@@ -101,7 +104,12 @@ class InitiatorServer:
         self.sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 32)
 
         global sig_count
+        global abort_count
         sig_count = 0
+        abort_count = 0
+
+        self.timer = Timer(WATCHDOG_TIMEOUT, self.abort)
+        self.timer.start()
 
         self.initiate_new()  # kickstart the whole process
 
@@ -109,22 +117,16 @@ class InitiatorServer:
         self.transport = transport
 
     def datagram_received(self, data, addr):
+        self.timer.cancel()
+        self.timer = Timer(WATCHDOG_TIMEOUT, self.abort)
+        self.timer.start()
+
         (ip, _) = addr
         res_idx = int(ip.split('.')[-1]) - 2
 
-        if data == b'\xff':
-            # this is a request for a share
-            print("!!!! got share request from", res_idx)
-            res = self.go.serialize(self.all_shares[res_idx])
-            self.transport.sendto(res, (ip, PORT_KEY))
-            # print("sent share:", self.all_shares[res_idx])
-            # self.initiate_new()
-            return
-
         if data == b'\xfe':
             # this is a request to start over
-            print("initiating new")
-            self.initiate_new()
+            self.abort()
             return
 
         # otherwise this is a signature share!
@@ -141,6 +143,11 @@ class InitiatorServer:
         #     print(f"sequence number mismatch. \
         #         Expected {self.seq} got {seq} from {res_idx}")
         #     print("discarding extra share")
+    
+    def abort(self):
+        global abort_count
+        abort_count += 1
+        self.initiate_new()
 
     def aggregate_and_verify(self):
         self.bls.aggregate(self.signs)
@@ -234,8 +241,10 @@ def main():
         finally:
             server.close()
         global sig_count
-        print(f"Completed {sig_count} in {round(delay,2)} seconds.")
-        print(f"Average is {round(sig_count/(delay),2)} signatures per second")
+        global abort_count
+        print(f"Completed {sig_count} in {delay:0.2f} seconds.")
+        print(f"Average is {sig_count/delay:0.2f} signatures per second")
+        print(f"There were {abort_count} aborts ({100*abort_count/sig_count:0.5f}%)")
 
         # ask responders to die
         sock = socket.socket(

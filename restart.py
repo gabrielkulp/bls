@@ -6,7 +6,7 @@ import time
 import signal
 
 exe = "./server.py"
-OVERLAP = .5
+OVERLAP = .1
 
 
 def getIP():
