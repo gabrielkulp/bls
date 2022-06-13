@@ -4,7 +4,7 @@ services:
   initiator:
     build: .
     image: gabrielkulp/bls:latest
-    command: [ "./server.py", "10", "7", "20" ]
+    command: "./server.py 10 7 30"
     #"${SERVER_COUNT:-10}" "${THRESHOLD:-7}"
     networks:
       bls-net:
@@ -13,8 +13,8 @@ services:
   responder:
     build: .
     image: gabrielkulp/bls:latest
-    #command: [ "./server.py" ]
-    command: [ "./restart.py", "10", ".7", "8", "2", "20" ]
+    command: "./server.py"
+    #command: "./restart.py 10 .7 10 3 30"
     depends_on:
       - initiator
     deploy:

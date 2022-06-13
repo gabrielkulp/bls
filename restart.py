@@ -3,12 +3,17 @@ import logging
 import subprocess
 import sys
 import time
+import signal
 
 exe = "./server.py"
+OVERLAP = .5
+
+
 def getIP():
-	import socket
-	hostname = socket.gethostname()
-	return socket.gethostbyname(hostname)
+    import socket
+    hostname = socket.gethostname()
+    return socket.gethostbyname(hostname)
+
 
 def findNextPrime(n):
     if(n <= 1):
@@ -102,16 +107,12 @@ class Algorithm:
         # timetoReboot is the time after which the node is
         # scheduled to be rebooted.
         try:
-            subprocess.run(
-                [exe],
-                universal_newlines=True,
-                capture_output=True, timeout=timeToReboot)
+            subprocess.run([exe], timeout=timeToReboot+OVERLAP)
             sys.stdout.flush()
         except subprocess.TimeoutExpired:
-            print("timeout done")
+            print("Went down")
         finally:
-            time.sleep(self.rebootTime)
-        print("Went down")
+            time.sleep(self.rebootTime-OVERLAP)
 
     def run(self):
         if ((self.t) < self.mIntervals):
@@ -168,13 +169,20 @@ class Algorithm:
             self.rebootAfterTime(timeToReboot)
 
 
+
 if len(sys.argv) != 1+5:
     print("Missing arguments:")
-    print("[server count] [threshold fraction] [attack time] [reboot time] [total time]")
+    print("[# nodes] [threshold frac] [attack t] [reboot t] [test duration]")
     exit(1)
 
-server_count = int(sys.argv[1])
-node_count = server_count + 1
+# get key first before running main loop
+try:
+    subprocess.run([exe], timeout=1)
+    sys.stdout.flush()
+except subprocess.TimeoutExpired:
+    print("got key")
+
+node_count = int(sys.argv[1])
 
 ips = []
 for i in range(node_count):
@@ -189,7 +197,13 @@ nodePicker = RandomNodePicker(n)
 # print(nodePicker.generators)
 logging.debug(nodePicker.generators)
 algo = Algorithm(ips, n, attackTime, rebootTime, t, nodePicker)
-total_time = float(sys.argv[5])
-end_time = time.time() + total_time
-while(time.time() < end_time):
+total_time = int(sys.argv[5])
+
+
+def handler(signum, frame):
+    print("Time is up!")
+    exit(0)
+signal.signal(signal.SIGALRM, handler)
+signal.alarm(total_time+5) # 5 extra seconds of leeway
+while True:
     algo.run()
