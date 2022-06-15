@@ -109,6 +109,8 @@ class Algorithm:
         try:
             subprocess.run([exe], timeout=timeToReboot+OVERLAP)
             sys.stdout.flush()
+            print("received exit signal")
+            exit(0)
         except subprocess.TimeoutExpired:
             print("Went down")
         finally:
@@ -172,7 +174,7 @@ class Algorithm:
 
 if len(sys.argv) != 1+5:
     print("Missing arguments:")
-    print("[# nodes] [threshold frac] [attack t] [reboot t] [test duration]")
+    print("[# nodes] [# threshold] [attack t] [reboot t] [test duration]")
     exit(1)
 
 # get key first before running main loop
@@ -183,27 +185,26 @@ except subprocess.TimeoutExpired:
     print("got key")
 
 node_count = int(sys.argv[1])
+threshold = int(sys.argv[2])
+attackTime = int(sys.argv[3])
+rebootTime = int(sys.argv[4])
+total_time = int(sys.argv[5])
 
 ips = []
 for i in range(node_count):
     ips.append("10.0.0." + str(i+2))
 
-attackTime = int(sys.argv[3])
-rebootTime = int(sys.argv[4])
-t = int(node_count * float(sys.argv[2]))
-
 n = node_count
 nodePicker = RandomNodePicker(n)
 # print(nodePicker.generators)
 logging.debug(nodePicker.generators)
-algo = Algorithm(ips, n, attackTime, rebootTime, t, nodePicker)
-total_time = int(sys.argv[5])
+algo = Algorithm(ips, n, attackTime, rebootTime, threshold, nodePicker)
 
 
 def handler(signum, frame):
-    print("Time is up!")
+    print("Timer ran out")
     exit(0)
 signal.signal(signal.SIGALRM, handler)
-signal.alarm(total_time+5) # 5 extra seconds of leeway
+signal.alarm(total_time+10) # 10 extra seconds of leeway
 while True:
     algo.run()

@@ -4,8 +4,7 @@ services:
   initiator:
     build: .
     image: gabrielkulp/bls:latest
-    command: "./server.py 10 7 30"
-    #"${SERVER_COUNT:-10}" "${THRESHOLD:-7}"
+    command: "./server.py ${SERVER_COUNT:-10} ${THRESHOLD:-7} ${RUNTIME:-30}"
     networks:
       bls-net:
         ipv4_address: 10.0.0.254
@@ -14,12 +13,11 @@ services:
     build: .
     image: gabrielkulp/bls:latest
     #command: "./server.py"
-    command: "./restart.py 10 .7 10 3 30"
+    command: "./restart.py ${SERVER_COUNT:-10} ${THRESHOLD:-7} ${ATTACKTIME:-10} ${REBOOTTIME:-3} ${RUNTIME:-30}"
     depends_on:
       - initiator
     deploy:
-      replicas: 10
-      # replicas: "${SERVER_COUNT:-10}"
+      replicas: "${SERVER_COUNT:-10}"
     networks:
       bls-net:
 
