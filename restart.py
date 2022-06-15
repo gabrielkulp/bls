@@ -2,11 +2,11 @@
 import logging
 import subprocess
 import sys
-import time
+import os
 import signal
 
 exe = "./server.py"
-OVERLAP = .1
+OVERLAP = 1
 
 
 def getIP():
@@ -171,6 +171,9 @@ class Algorithm:
             self.rebootAfterTime(timeToReboot)
 
 
+if "disable" in sys.argv:
+    print("running without reboots")
+    os.execlp(exe, exe)
 
 if len(sys.argv) != 1+5:
     print("Missing arguments:")

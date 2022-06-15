@@ -1,17 +1,43 @@
 #!/usr/bin/env python3
 
 import subprocess
+from dataclasses import dataclass
 
 ERROR_LOG = "error.log"
 
-def run_once(server_count, threshold, attack, reboot, runtime):
+@dataclass
+class Input:
+	count: int
+	threshold: int
+	attack: int
+	reboot: int
+	runtime: int
+
+
+@dataclass
+class Output:
+	signatures: int
+	aborts: int
+
+
+@dataclass
+class Record:
+	input: Input
+	output: Output
+	reboots: bool
+
+
+def execute(inp: Input, reboots: bool):
 	env = {
-		"SERVER_COUNT": str(server_count),
-		"THRESHOLD": str(threshold),
-		"ATTACKTIME": str(attack),
-		"REBOOTTIME": str(reboot),
-		"RUNTIME": str(runtime)
+		"SERVER_COUNT": str(inp.count),
+		"THRESHOLD":    str(inp.threshold),
+		"RUNTIME":      str(inp.runtime),
+		"ATTACKTIME":   str(inp.attack),
+		"REBOOTTIME":   str(inp.reboot),
 	}
+	if not reboots:
+		env["REBOOTTIME"] = "disable"
+
 	print("running with", env)
 	proc = subprocess.Popen(
 		["docker-compose", "up"], env=env,
@@ -31,16 +57,35 @@ def run_once(server_count, threshold, attack, reboot, runtime):
 			f.write(b''.join(output))
 		print("log dumped to", ERROR_LOG)
 		print("check `docker ps -a` to see if manual cleanup is needed.")
-		exit(1)
+		return None
 
 	proc = subprocess.run(["docker-compose", "down"], env=env, capture_output=True)
 	if proc.returncode != 0:
 		print("Automatic cleanup failed.")
 		print("check `docker ps -a` to see if manual cleanup is needed.")
-		exit(2)
+		return None
 
 	signatures = int(sigs_line.split(b'|')[1].strip().split(b' ')[1])
 	aborts = int(aborts_line.split(b'|')[1].strip().split(b' ')[2])
-	return signatures, aborts
+	return Record(inp, Output(signatures, aborts), reboots)
 
-print(run_once(5, 2, 10, 3, 15))
+def stats(rec: Record):
+	success_rate = rec.output.signatures / rec.input.runtime
+	abort_rate = rec.output.aborts / rec.input.runtime
+	return success_rate, abort_rate
+
+inputs = [
+	Input(5, 2, 10, 3, 15),
+	Input(5, 3, 10, 3, 15),
+	Input(5, 4, 10, 3, 15),
+]
+
+records = []
+
+for inp in inputs:
+	for r in [True, False]:
+		records.append(execute(inp, r))
+
+print("summary:")
+for rec in records:
+	print(stats(rec))
