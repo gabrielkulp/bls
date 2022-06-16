@@ -12,8 +12,7 @@ services:
   responder:
     build: .
     image: gabrielkulp/bls:latest
-    #command: "./server.py"
-    command: "./restart.py ${SERVER_COUNT:-10} ${THRESHOLD:-7} ${ATTACKTIME:-10} ${REBOOTTIME:-3} ${RUNTIME:-30}"
+    command: "./restart.py ${SERVER_COUNT:-10} ${THRESHOLD:-7} ${RUNTIME:-30} ${ATTACKTIME:-10} ${REBOOTTIME:-3}"
     depends_on:
       - initiator
     deploy:

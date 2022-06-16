@@ -17,7 +17,7 @@ MCAST_CHANNEL = ("224.1.1.1", 5006)  # multicast for signing requests
 
 KEY_SHARE_PATH = "./share.key"
 
-WATCHDOG_TIMEOUT = .01  # seconds of silence until abort
+WATCHDOG_TIMEOUT = .05  # seconds of silence until abort
 
 
 class ResponderServer:

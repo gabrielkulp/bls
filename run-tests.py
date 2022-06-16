@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 
+import sys
 import subprocess
 from dataclasses import dataclass
+from typing import List, Tuple
 
 ERROR_LOG = "error.log"
 
@@ -9,9 +11,9 @@ ERROR_LOG = "error.log"
 class Input:
 	count: int
 	threshold: int
+	runtime: int
 	attack: int
 	reboot: int
-	runtime: int
 
 
 @dataclass
@@ -27,15 +29,20 @@ class Record:
 	reboots: bool
 
 
-def execute(inp: Input, reboots: bool):
+def execute(inp: Input, reboots: bool) -> Record:
 	env = {
 		"SERVER_COUNT": str(inp.count),
 		"THRESHOLD":    str(inp.threshold),
 		"RUNTIME":      str(inp.runtime),
-		"ATTACKTIME":   str(inp.attack),
-		"REBOOTTIME":   str(inp.reboot),
 	}
-	if not reboots:
+	if reboots:
+		if not inp.attack or not inp.reboot:
+			raise ValueError("reboot specified, but no attack and reboot time given")
+		env |= {
+			"ATTACKTIME":   str(inp.attack),
+			"REBOOTTIME":   str(inp.reboot),
+		}
+	else:
 		env["REBOOTTIME"] = "disable"
 
 	print("running with", env)
@@ -67,25 +74,120 @@ def execute(inp: Input, reboots: bool):
 
 	signatures = int(sigs_line.split(b'|')[1].strip().split(b' ')[1])
 	aborts = int(aborts_line.split(b'|')[1].strip().split(b' ')[2])
+	print(f"{signatures} signatures, {aborts} aborts")
 	return Record(inp, Output(signatures, aborts), reboots)
 
-def stats(rec: Record):
+def stats(rec: Record) -> Tuple[float, float]:
 	success_rate = rec.output.signatures / rec.input.runtime
-	abort_rate = rec.output.aborts / rec.input.runtime
+	abort_rate = rec.output.aborts / (rec.output.signatures+rec.output.aborts)
 	return success_rate, abort_rate
 
-inputs = [
-	Input(5, 2, 10, 3, 15),
-	Input(5, 3, 10, 3, 15),
-	Input(5, 4, 10, 3, 15),
-]
+def save_records(filename: str, records: List[Record]):
+	with open(filename, "w") as f:
+		f.write("count,threshold,runtime,attack,reboot;")
+		f.write("signatures,aborts;")
+		f.write("reboots\n")
+		for rec in records:
+			inp = [
+				rec.input.count, rec.input.threshold, rec.input.runtime,
+				rec.input.attack, rec.input.reboot]
+			out = [rec.output.signatures, rec.output.aborts]
+			r = "yes" if rec.reboots else "no"
+			fields = [",".join(map(str, inp)), ",".join(map(str, out)), r]
+			f.write(";".join(fields) + "\n")
 
-records = []
+def load_records(filename: str) -> List[Record]:
+	records = []
+	with open(filename, "r") as f:
+		f.readline()
+		for line in f:
+			inp, out, r = line.split(";")
+			inputs = Input(*map(int, inp.split(",")))
+			outputs = Output(*map(int, out.split(",")))
+			reboots = (r == "yes")
+			records.append(Record(inputs, outputs, reboots))
+	return records
 
-for inp in inputs:
-	for r in [True, False]:
-		records.append(execute(inp, r))
+if __name__ == "__main__":
+	if "--build" in sys.argv:
+		p = subprocess.Popen(["docker", "build", ".", "-t", "gabrielkulp/bls"])
+		if p.wait() != 0:
+			print("non-zero exit code during build. Exiting.")
+			exit(1)
+	
+	runtime = 30
+	attack = 6
+	reboot = 3
+	records_baseline = []
+	records_reboots = []
 
-print("summary:")
-for rec in records:
-	print(stats(rec))
+	if "--run" in sys.argv:
+		
+		inputs = [
+			Input(8,  2,  runtime, attack, reboot),
+			Input(8,  3,  runtime, attack, reboot),
+			Input(8,  4,  runtime, attack, reboot),
+			Input(8,  5,  runtime, attack, reboot),
+			Input(8,  6,  runtime, attack, reboot),
+			Input(12, 2,  runtime, attack, reboot),
+			Input(12, 4,  runtime, attack, reboot),
+			Input(12, 6,  runtime, attack, reboot),
+			Input(12, 8,  runtime, attack, reboot),
+			Input(12, 10, runtime, attack, reboot),
+			Input(18, 2,  runtime, attack, reboot),
+			Input(18, 6,  runtime, attack, reboot),
+			Input(18, 9,  runtime, attack, reboot),
+			Input(18, 12, runtime, attack, reboot),
+			Input(18, 16, runtime, attack, reboot),
+		]
+
+		# run tests
+		for inp in inputs:
+			records_baseline.append(execute(inp, False))
+			records_reboots.append(execute(inp, True))
+		save_records("records_baseline.csv", records_baseline)
+		save_records("records_reboots.csv", records_reboots)
+
+	else:  # load last data
+		records_baseline = load_records("records_baseline.csv")
+		records_reboots = load_records("records_reboots.csv")
+
+	print("\n== SUMMARY ==\n")
+	print("All tests run with")
+	print("\tAttack time:", attack)
+	print("\tReboot time:", reboot)
+	print("\tRuntime:", runtime)
+	print("\n")
+	for base, reb in zip(records_baseline, records_reboots):
+		b_sigs, b_aborts = stats(base)
+		r_sigs, r_aborts = stats(reb)
+		print(f"count {base.input.count}, threshold {base.input.threshold}:")
+		print("\t[baseline] ", end="")
+		print(f"{base.output.signatures} signatures, {base.output.aborts} aborts")
+		print(f"\t--> {b_sigs:0.2f} sigs/sec, {b_aborts*100:0.2f}% failed")
+		print("\t[reboots] ", end="")
+		print(f"{reb.output.signatures} signatures, {reb.output.aborts} aborts")
+		print(f"\t--> {r_sigs:0.2f} sigs/sec, {r_aborts*100:0.2f}% failed")
+		print(f"\tReboots are {100*r_sigs/b_sigs:0.1f}% of full-speed.")
+		print()
+	
+	if "--plot" in sys.argv:
+		import matplotlib.pyplot as plt
+		fix, ax = plt.subplots()
+		for n in [8, 12, 18]:
+			ax.plot(
+				[0.1, 0.33, 0.5, 0.67, 0.9],
+				[stats(r)[0] for r in records_baseline if r.input.count == n],
+				label=f"n={n} baseline"
+			)
+			ax.plot(
+				[0.1, 0.33, 0.5, 0.67, 0.9],
+				[stats(r)[0] for r in records_reboots if r.input.count == n],
+				label=f"n={n} with reboots"
+			)
+			ax.legend()
+		ax.set_xlim(0,1)
+		ax.set_xlabel("Threshold Fraction (t/n)")
+		ax.set_ylabel("Signatures per Second")
+		ax.set_title(f"Attack time {attack}s, Reboot time {reboot}s, Runtime {runtime}s")
+		plt.show()

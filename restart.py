@@ -6,7 +6,7 @@ import os
 import signal
 
 exe = "./server.py"
-OVERLAP = 1
+OVERLAP = .5
 
 
 def getIP():
@@ -177,7 +177,7 @@ if "disable" in sys.argv:
 
 if len(sys.argv) != 1+5:
     print("Missing arguments:")
-    print("[# nodes] [# threshold] [attack t] [reboot t] [test duration]")
+    print("[# nodes] [# threshold] [test duration] [attack t] [reboot t]")
     exit(1)
 
 # get key first before running main loop
@@ -189,9 +189,9 @@ except subprocess.TimeoutExpired:
 
 node_count = int(sys.argv[1])
 threshold = int(sys.argv[2])
-attackTime = int(sys.argv[3])
-rebootTime = int(sys.argv[4])
-total_time = int(sys.argv[5])
+total_time = int(sys.argv[3])
+attackTime = int(sys.argv[4])
+rebootTime = int(sys.argv[5])
 
 ips = []
 for i in range(node_count):
