@@ -143,7 +143,7 @@ class InitiatorServer:
         #     print(f"sequence number mismatch. \
         #         Expected {self.seq} got {seq} from {res_idx}")
         #     print("discarding extra share")
-    
+
     def abort(self):
         global abort_count
         abort_count += 1
@@ -244,7 +244,8 @@ def main():
         global abort_count
         print(f"Completed {sig_count} in {delay:0.2f} seconds.")
         print(f"Average is {sig_count/delay:0.2f} signatures per second")
-        print(f"There were {abort_count} aborts ({100*abort_count/sig_count:0.5f}%)")
+        frac = abort_count/sig_count
+        print(f"There were {abort_count} aborts ({100*frac:0.5f}%)")
 
         # ask responders to die
         sock = socket.socket(

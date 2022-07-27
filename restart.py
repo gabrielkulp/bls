@@ -171,6 +171,13 @@ class Algorithm:
             self.rebootAfterTime(timeToReboot)
 
 
+# get key first before running main loop
+try:
+    subprocess.run([exe], timeout=1)
+    sys.stdout.flush()
+except subprocess.TimeoutExpired:
+    print("got key")
+
 if "disable" in sys.argv:
     print("running without reboots")
     os.execlp(exe, exe)
@@ -179,13 +186,6 @@ if len(sys.argv) != 1+5:
     print("Missing arguments:")
     print("[# nodes] [# threshold] [test duration] [attack t] [reboot t]")
     exit(1)
-
-# get key first before running main loop
-try:
-    subprocess.run([exe], timeout=1)
-    sys.stdout.flush()
-except subprocess.TimeoutExpired:
-    print("got key")
 
 node_count = int(sys.argv[1])
 threshold = int(sys.argv[2])
@@ -207,7 +207,9 @@ algo = Algorithm(ips, n, attackTime, rebootTime, threshold, nodePicker)
 def handler(signum, frame):
     print("Timer ran out")
     exit(0)
+
+
 signal.signal(signal.SIGALRM, handler)
-signal.alarm(total_time+10) # 10 extra seconds of leeway
+signal.alarm(total_time+10)  # 10 extra seconds of leeway
 while True:
     algo.run()
